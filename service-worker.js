@@ -1,4 +1,4 @@
-const CACHE='bagel-cost-tracker-v4';
+const CACHE='bagel-cost-tracker-v5';
 const ASSETS=['./','./index.html','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'];
 
 self.addEventListener('install', event => {

@@ -88,6 +88,10 @@ textarea:focus { border-color:#8a8c85; box-shadow:0 0 0 3px rgba(37,42,34,.08); 
 .order-lines { display:grid; gap:9px; }
 .order-line { display:grid; grid-template-columns:minmax(210px,1.7fr) .55fr .7fr auto; gap:8px; align-items:center; }
 .order-line-total { font-weight:800; text-align:right; white-space:nowrap; }
+.mixed-flavors { grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px; background:var(--soft); border-radius:12px; }
+.mixed-flavors[hidden] { display:none; }
+.mixed-flavors label { margin:0; font-size:.76rem; color:var(--muted); }
+.mixed-flavors select { margin-top:5px; }
 .order-totals { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
 .order-total { background:var(--soft); border-radius:12px; padding:11px; }
 .order-total strong { display:block; font-size:1.05rem; }
@@ -110,6 +114,7 @@ textarea:focus { border-color:#8a8c85; box-shadow:0 0 0 3px rgba(37,42,34,.08); 
   .order-line { grid-template-columns:1fr .7fr auto; }
   .order-line .line-menu { grid-column:1 / -1; }
   .order-line-total { text-align:left; }
+  .mixed-flavors { grid-template-columns:1fr; }
   .order-totals { grid-template-columns:1fr; }
 }
 
@@ -134,7 +139,7 @@ textarea:focus { border-color:#8a8c85; box-shadow:0 0 0 3px rgba(37,42,34,.08); 
 <body>
   <header class="topbar">
     <div>
-      <p class="eyebrow">Food costing + orders + customers · v4</p>
+      <p class="eyebrow">Food costing + orders + customers · v5</p>
       <h1>Bagel Cost Tracker</h1>
     </div>
     <div class="top-actions">
@@ -350,6 +355,10 @@ textarea:focus { border-color:#8a8c85; box-shadow:0 0 0 3px rgba(37,42,34,.08); 
       <input class="line-order-qty" type="number" min="1" step="1" value="1" aria-label="Quantity" />
       <div class="order-line-total">$0.00</div>
       <button type="button" class="icon-btn remove-order-line" aria-label="Remove item">×</button>
+      <div class="mixed-flavors" hidden>
+        <label>Flavor 1<select class="mixed-flavor-a" aria-label="Mixed dozen flavor 1"></select></label>
+        <label>Flavor 2<select class="mixed-flavor-b" aria-label="Mixed dozen flavor 2"></select></label>
+      </div>
     </div>
   </template>
 
@@ -705,8 +714,34 @@ function fillPackagingSelect(selected=''){
 }
 function escapeHtml(s=''){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
 
+const MIXED_DTC_DOZEN_ID='__mixed_dtc_dozen__';
+function recipeFlavorName(recipe){ return String(recipe?.name||'Bagel').replace(/\s+Bagels?$/i,''); }
+function bagelRecipes(){ return state.recipes.filter(r=>Number(r.yield)>0); }
+function fillMixedFlavorSelect(select, selected=''){
+  select.innerHTML=`<option value="">Choose flavor…</option>`+bagelRecipes().map(r=>`<option value="${r.id}" ${r.id===selected?'selected':''}>${escapeHtml(recipeFlavorName(r))}</option>`).join('');
+}
+function mixedDozenPrice(){
+  const item=state.menuItems.find(i=>i.channel==='Direct-to-Consumer' && Number(i.recipeUnits)===12);
+  return item ? Number(item.price||22) : 22;
+}
+function mixedDozenPackagingCost(){
+  const item=state.menuItems.find(i=>i.channel==='Direct-to-Consumer' && Number(i.recipeUnits)===12);
+  if(item){ const p=byId(state.packagingItems||[],item.packagingItemId); return packagingUnitCost(p)*Number(item.packagingQty||0)+Number(item.extras||0); }
+  const p=(state.packagingItems||[]).find(x=>x.name==='Plastic Bag')||(state.packagingItems||[])[0];
+  return packagingUnitCost(p)*2;
+}
+function mixedDozenCost(recipeIdA,recipeIdB){
+  const a=byId(state.recipes,recipeIdA), b=byId(state.recipes,recipeIdB);
+  if(!a || !b || a.id===b.id) return NaN;
+  return recipeUnitCost(a)*6 + recipeUnitCost(b)*6 + mixedDozenPackagingCost();
+}
+function mixedDozenName(recipeIdA,recipeIdB){
+  const a=byId(state.recipes,recipeIdA), b=byId(state.recipes,recipeIdB);
+  return `Mixed DTC Dozen — ${recipeFlavorName(a)} + ${recipeFlavorName(b)}`;
+}
 function fillOrderMenuSelect(select, selected=''){
-  select.innerHTML=`<option value="">Choose sales item…</option>`+state.menuItems.map(i=>`<option value="${i.id}" ${i.id===selected?'selected':''}>${escapeHtml(i.name)} · ${escapeHtml(i.channel||'DTC')} · ${money(Number(i.price))}</option>`).join('');
+  const mixed=`<option value="${MIXED_DTC_DOZEN_ID}" ${selected===MIXED_DTC_DOZEN_ID?'selected':''}>Mixed DTC Dozen · choose 2 flavors · ${money(mixedDozenPrice())}</option>`;
+  select.innerHTML=`<option value="">Choose sales item…</option>`+mixed+state.menuItems.map(i=>`<option value="${i.id}" ${i.id===selected?'selected':''}>${escapeHtml(i.name)} · ${escapeHtml(i.channel||'DTC')} · ${money(Number(i.price))}</option>`).join('');
 }
 
 
@@ -864,10 +899,21 @@ function renderOrderPreview(){
   const rows=$$('.order-line');
   let revenue=0,cost=0;
   rows.forEach(row=>{
-    const item=byId(state.menuItems,row.querySelector('.line-menu').value);
+    const selected=row.querySelector('.line-menu').value;
     const qty=Number(row.querySelector('.line-order-qty').value||0);
-    const lineRevenue=(item?Number(item.price):0)*qty;
-    const lineCost=(item?menuCost(item):0)*qty;
+    let lineRevenue=0,lineCost=0;
+    if(selected===MIXED_DTC_DOZEN_ID){
+      const a=row.querySelector('.mixed-flavor-a').value, b=row.querySelector('.mixed-flavor-b').value;
+      lineRevenue=mixedDozenPrice()*qty;
+      const currentCost=mixedDozenCost(a,b);
+      const snap=row._snapshot && row._snapshot.kind==='mixedDozen' ? row._snapshot : null;
+      lineCost=(snap && Number.isFinite(Number(snap.unitCost)) ? Number(snap.unitCost) : (Number.isFinite(currentCost)?currentCost:0))*qty;
+    } else {
+      const item=byId(state.menuItems,selected);
+      const snap=row._snapshot && row._snapshot.menuItemId===selected ? row._snapshot : null;
+      lineRevenue=(snap && Number.isFinite(Number(snap.unitPrice)) ? Number(snap.unitPrice) : (item?Number(item.price):0))*qty;
+      lineCost=(snap && Number.isFinite(Number(snap.unitCost)) ? Number(snap.unitCost) : (item?menuCost(item):0))*qty;
+    }
     revenue+=lineRevenue; cost+=lineCost;
     row.querySelector('.order-line-total').textContent=money(lineRevenue);
   });
@@ -908,11 +954,20 @@ function addOrderLine(line={}){
   const node=$('#orderLineTemplate').content.firstElementChild.cloneNode(true);
   const menuSel=node.querySelector('.line-menu');
   const qty=node.querySelector('.line-order-qty');
-  fillOrderMenuSelect(menuSel,line.menuItemId||''); qty.value=line.qty||1; node._snapshot=line.menuItemId?{...line}:null;
-  menuSel.addEventListener('change',()=>{ node._snapshot=null; renderOrderPreview(); });
+  const mixedBox=node.querySelector('.mixed-flavors');
+  const flavorA=node.querySelector('.mixed-flavor-a'), flavorB=node.querySelector('.mixed-flavor-b');
+  const isMixed=line.kind==='mixedDozen' || line.menuItemId===MIXED_DTC_DOZEN_ID;
+  fillOrderMenuSelect(menuSel,isMixed?MIXED_DTC_DOZEN_ID:(line.menuItemId||''));
+  fillMixedFlavorSelect(flavorA,line.flavorRecipeIds?.[0]||'');
+  fillMixedFlavorSelect(flavorB,line.flavorRecipeIds?.[1]||'');
+  qty.value=line.qty||1; node._snapshot=(line.menuItemId||line.kind)?{...line}:null;
+  const syncMode=()=>{ mixedBox.hidden=menuSel.value!==MIXED_DTC_DOZEN_ID; };
+  menuSel.addEventListener('change',()=>{ node._snapshot=null; syncMode(); renderOrderPreview(); });
+  flavorA.addEventListener('change',()=>{ node._snapshot=null; renderOrderPreview(); });
+  flavorB.addEventListener('change',()=>{ node._snapshot=null; renderOrderPreview(); });
   qty.addEventListener('input',renderOrderPreview);
   node.querySelector('.remove-order-line').addEventListener('click',()=>{ node.remove(); if(!$$('.order-line').length) addOrderLine(); renderOrderPreview(); });
-  $('#orderLines').appendChild(node); renderOrderPreview();
+  syncMode(); $('#orderLines').appendChild(node); renderOrderPreview();
 }
 
 function addRecipeLine(line={}){
@@ -940,9 +995,24 @@ $('#orderForm').addEventListener('submit',e=>{
   e.preventDefault();
   const rows=$$('.order-line');
   const lines=[];
+  let invalidMixed=false;
   for(const row of rows){
     const menuItemId=row.querySelector('.line-menu').value, qty=Number(row.querySelector('.line-order-qty').value||0);
     if(!menuItemId || qty<=0) continue;
+    if(menuItemId===MIXED_DTC_DOZEN_ID){
+      const a=row.querySelector('.mixed-flavor-a').value, b=row.querySelector('.mixed-flavor-b').value;
+      if(!a || !b || a===b){ invalidMixed=true; continue; }
+      const snap=(row._snapshot && row._snapshot.kind==='mixedDozen')?row._snapshot:null;
+      const cost=mixedDozenCost(a,b);
+      lines.push({
+        kind:'mixedDozen', menuItemId:MIXED_DTC_DOZEN_ID, qty, flavorRecipeIds:[a,b],
+        flavorNames:[recipeFlavorName(byId(state.recipes,a)),recipeFlavorName(byId(state.recipes,b))],
+        itemName:snap?.itemName||mixedDozenName(a,b), channel:'Direct-to-Consumer',
+        unitPrice:Number.isFinite(Number(snap?.unitPrice))?Number(snap.unitPrice):mixedDozenPrice(),
+        unitCost:Number.isFinite(Number(snap?.unitCost))?Number(snap.unitCost):cost, unitBagels:12
+      });
+      continue;
+    }
     const item=byId(state.menuItems,menuItemId); if(!item) continue;
     const snap=(row._snapshot && row._snapshot.menuItemId===menuItemId)?row._snapshot:null;
     lines.push({
@@ -954,6 +1024,7 @@ $('#orderForm').addEventListener('submit',e=>{
       unitBagels:Number.isFinite(Number(snap?.unitBagels))?Number(snap.unitBagels):menuItemBagelCount(item)
     });
   }
+  if(invalidMixed){ toast('Mixed DTC dozen needs two different flavors'); return; }
   if(!lines.length){ toast('Add at least one order item'); return; }
   const id=$('#orderId').value||uid();
   const existing=byId(state.orders||[],id);
