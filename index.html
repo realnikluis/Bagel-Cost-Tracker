@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <title>Bagel Cost Tracker — v3</title>
+  <title>Bagel Cost Tracker — v6</title>
   <style>
 :root {
   --bg: #f6f2ea;
@@ -99,6 +99,11 @@ textarea:focus { border-color:#8a8c85; box-shadow:0 0 0 3px rgba(37,42,34,.08); 
 .order-meta { color:var(--muted); font-size:.8rem; }
 .filters { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .filters select { width:auto; min-width:150px; }
+.order-history-tabs { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; }
+.order-history-tab { border:1px solid var(--line); background:white; color:var(--muted); padding:8px 12px; border-radius:999px; cursor:pointer; font-weight:750; }
+.order-history-tab.active { background:var(--accent); color:white; border-color:var(--accent); }
+.order-history-tab .count { opacity:.72; margin-left:4px; }
+.order-history-note { color:var(--muted); font-size:.8rem; margin:-4px 0 12px; }
 .status-select { font-weight:700; }
 .customer-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
 .customer-toolbar input { max-width:360px; }
@@ -139,7 +144,7 @@ textarea:focus { border-color:#8a8c85; box-shadow:0 0 0 3px rgba(37,42,34,.08); 
 <body>
   <header class="topbar">
     <div>
-      <p class="eyebrow">Food costing + orders + customers · v5</p>
+      <p class="eyebrow">Food costing + orders + customers · v6</p>
       <h1>Bagel Cost Tracker</h1>
     </div>
     <div class="top-actions">
@@ -207,6 +212,12 @@ textarea:focus { border-color:#8a8c85; box-shadow:0 0 0 3px rgba(37,42,34,.08); 
           </div>
           <div class="card">
             <div class="card-header"><div><p class="eyebrow">Order history</p><h2>Orders</h2></div></div>
+            <div class="order-history-tabs" id="orderHistoryTabs">
+              <button type="button" class="order-history-tab active" data-order-history="active">Active Orders <span class="count" id="activeOrderCount">0</span></button>
+              <button type="button" class="order-history-tab" data-order-history="completed">Completed Orders <span class="count" id="completedOrderCount">0</span></button>
+              <button type="button" class="order-history-tab" data-order-history="archive">Archive <span class="count" id="archivedOrderCount">0</span></button>
+            </div>
+            <div class="order-history-note" id="orderHistoryNote">Pending and ready orders appear here.</div>
             <div class="table-wrap">
               <table>
                 <thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Items</th><th>Status</th><th>Payment</th><th>Revenue</th><th>Gross profit</th><th></th></tr></thead>
@@ -868,6 +879,13 @@ function renderMenu(){
 }
 
 
+let orderHistoryView='active';
+function orderHistoryBucket(order){
+  if(order.status==='Completed' && order.paymentStatus==='Paid') return 'archive';
+  if(order.status==='Completed' || order.status==='Cancelled') return 'completed';
+  return 'active';
+}
+
 function renderOrders(){
   const period=$('#salesPeriod')?.value||'month';
   const orders=[...(state.orders||[])].sort((a,b)=>(b.date||'').localeCompare(a.date||'') || Number(b.orderNumber||0)-Number(a.orderNumber||0));
@@ -876,13 +894,32 @@ function renderOrders(){
   const revenue=paid.reduce((s,o)=>s+orderRevenue(o),0);
   const cogs=paid.reduce((s,o)=>s+orderCost(o),0);
   const gp=revenue-cogs;
-  const open=filtered.filter(o=>!['Completed','Cancelled'].includes(o.status)).length;
+  const open=filtered.filter(o=>orderHistoryBucket(o)==='active').length;
   $('#salesSummaryCards').innerHTML=[
     ['Paid sales',money(revenue)],['Food + packaging',money(cogs)],['Gross profit',money(gp)],['Open orders',open]
   ].map(([label,value])=>`<div class="metric"><div class="value">${value}</div><div class="label">${label}</div></div>`).join('');
+
+  const counts={active:0,completed:0,archive:0};
+  filtered.forEach(o=>counts[orderHistoryBucket(o)]++);
+  $('#activeOrderCount').textContent=counts.active;
+  $('#completedOrderCount').textContent=counts.completed;
+  $('#archivedOrderCount').textContent=counts.archive;
+  $$('.order-history-tab').forEach(tab=>tab.classList.toggle('active',tab.dataset.orderHistory===orderHistoryView));
+  const notes={
+    active:'Pending and ready orders appear here.',
+    completed:'Completed but unpaid orders stay here. Cancelled orders are also kept here for your records.',
+    archive:'Orders move here automatically once they are both Completed and Paid.'
+  };
+  $('#orderHistoryNote').textContent=notes[orderHistoryView];
+
+  const visible=filtered.filter(o=>orderHistoryBucket(o)===orderHistoryView);
   const tbody=$('#ordersTable');
-  if(!filtered.length){ tbody.innerHTML=`<tr><td colspan="9" class="empty">No orders in this period yet.</td></tr>`; return; }
-  tbody.innerHTML=filtered.map(o=>{
+  if(!visible.length){
+    const empty={active:'No active orders in this period.',completed:'No completed or cancelled orders in this period.',archive:'No archived orders in this period.'};
+    tbody.innerHTML=`<tr><td colspan="9" class="empty">${empty[orderHistoryView]}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML=visible.map(o=>{
     const statusClass=o.status==='Completed'?'good':o.status==='Cancelled'?'bad':'warn';
     const payClass=o.paymentStatus==='Paid'?'good':'warn';
     return `<tr>
@@ -1034,6 +1071,12 @@ $('#orderForm').addEventListener('submit',e=>{
 });
 $('#cancelOrderEdit').addEventListener('click',clearOrderForm);
 $('#salesPeriod').addEventListener('change',renderOrders);
+$('#orderHistoryTabs').addEventListener('click',e=>{
+  const tab=e.target.closest('[data-order-history]');
+  if(!tab) return;
+  orderHistoryView=tab.dataset.orderHistory;
+  renderOrders();
+});
 $('#exportSalesCsv').addEventListener('click',()=>{
   const orders=[...(state.orders||[])].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const rows=[['Order','Date','Customer','Status','Payment','Items','Revenue','Food + Packaging','Gross Profit']];
