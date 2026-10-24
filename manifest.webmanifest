@@ -1,7 +1,7 @@
 {
   "name": "Bagel Cost Tracker",
   "short_name": "Bagel Costs",
-  "description": "Track bagel costs, orders, customers, sales, revenue, and gross profit.",
+  "description": "Track recipes, production batches, ingredients, orders, customers, and sales.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f6f2ea",

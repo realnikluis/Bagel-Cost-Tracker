@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <title>Bagel Cost Tracker — v6</title>
+  <title>Bagel Cost Tracker — v7</title>
   <style>
 :root {
   --bg: #f6f2ea;
@@ -115,6 +115,30 @@ textarea:focus { border-color:#8a8c85; box-shadow:0 0 0 3px rgba(37,42,34,.08); 
 .customer-name-button:hover { text-decoration:underline; }
 .customer-profile-head { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; }
 
+/* Production batch planner */
+.batch-layout { grid-template-columns: minmax(285px, .85fr) minmax(0, 1.5fr); }
+.batch-description, .batch-footnote { color:var(--muted); line-height:1.55; font-size:.87rem; }
+.batch-footnote { margin:15px 0 0; font-size:.79rem; }
+.batch-recipe-inputs { display:grid; gap:9px; }
+.batch-recipe-row { display:grid; grid-template-columns:minmax(0,1fr) 92px; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:13px; background:#fff; }
+.batch-recipe-row label { display:block; min-width:0; color:var(--text); font-weight:750; font-size:.93rem; }
+.batch-recipe-row .batch-yield { color:var(--muted); font-weight:450; font-size:.75rem; display:block; margin-top:4px; }
+.batch-recipe-row input { text-align:center; font-weight:800; }
+.batch-actions { margin-top:16px; }
+.batch-summary { grid-template-columns:repeat(2,minmax(0,1fr)); margin-bottom:0; }
+.batch-ingredient-row { display:flex; align-items:baseline; justify-content:space-between; gap:16px; border-bottom:1px solid var(--line); padding:12px 0; }
+.batch-ingredient-row:last-child { border-bottom:0; }
+.batch-ingredient-row strong { flex:0 0 auto; text-align:right; }
+.batch-ingredient-row span { min-width:0; overflow-wrap:anywhere; }
+.batch-recipe-detail { padding:14px; border:1px solid var(--line); border-radius:14px; background:#fff; }
+.batch-recipe-detail h3 { font-size:1rem; margin:0 0 5px; }
+.batch-recipe-detail p { color:var(--muted); font-size:.78rem; margin:0 0 10px; }
+.batch-recipe-detail ul { margin:0; padding-left:19px; line-height:1.8; font-size:.88rem; }
+@media (max-width: 620px) {
+  .batch-recipe-row { grid-template-columns:minmax(0,1fr) 88px; }
+  .batch-actions .button { flex:1 1 auto; }
+}
+
 @media (max-width: 620px) {
   .order-line { grid-template-columns:1fr .7fr auto; }
   .order-line .line-menu { grid-column:1 / -1; }
@@ -144,7 +168,7 @@ textarea:focus { border-color:#8a8c85; box-shadow:0 0 0 3px rgba(37,42,34,.08); 
 <body>
   <header class="topbar">
     <div>
-      <p class="eyebrow">Food costing + orders + customers · v6</p>
+      <p class="eyebrow">Food costing + orders + customers · v7</p>
       <h1>Bagel Cost Tracker</h1>
     </div>
     <div class="top-actions">
@@ -156,6 +180,7 @@ textarea:focus { border-color:#8a8c85; box-shadow:0 0 0 3px rgba(37,42,34,.08); 
 
   <nav class="tabs" aria-label="Main navigation">
     <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="batch-calculator">Batch Calculator</button>
     <button class="tab" data-tab="orders">Orders & Sales</button>
     <button class="tab" data-tab="customers">Customers</button>
     <button class="tab" data-tab="ingredients">Ingredients</button>
@@ -183,6 +208,33 @@ textarea:focus { border-color:#8a8c85; box-shadow:0 0 0 3px rgba(37,42,34,.08); 
       </div>
     </section>
 
+
+    <section id="batch-calculator" class="panel">
+      <div class="two-col batch-layout">
+        <div class="card">
+          <p class="eyebrow">Production prep</p>
+          <h2>Batch Calculator</h2>
+          <p class="batch-description">Enter how many batches to make of each flavor. Use 0 to skip a flavor. You can also enter a partial batch, like 0.5.</p>
+          <div id="batchRecipeInputs" class="batch-recipe-inputs"></div>
+          <div class="form-actions batch-actions">
+            <button type="button" class="button ghost" id="clearBatchPlan">Clear all batches</button>
+            <button type="button" class="button" id="copyBatchList">Copy ingredient list</button>
+          </div>
+          <p class="batch-footnote">Quantities come from your saved recipes and update automatically when you edit a recipe. This is a production ingredient calculator; packaging is not included.</p>
+        </div>
+        <div class="stack">
+          <div class="summary-grid batch-summary" id="batchSummaryCards"></div>
+          <div class="card">
+            <div class="card-header"><div><p class="eyebrow">Total for all selected batches</p><h2>Combined Ingredient List</h2></div></div>
+            <div id="batchIngredientTotals" aria-live="polite"></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><p class="eyebrow">Per-flavor breakdown</p><h2>What to Make</h2></div></div>
+            <div id="batchRecipeBreakdown" class="stack"></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <section id="orders" class="panel">
       <div class="two-col wide-right">
@@ -413,7 +465,8 @@ function demoState() {
     ],
     recipes: [],
     menuItems: [],
-    orders: []
+    orders: [],
+    productionPlan: {}
   };
 }
 
@@ -446,6 +499,7 @@ function loadState() {
         extras: Number.isFinite(Number(i.extras)) ? Number(i.extras) : 0
       }));
       if (!Array.isArray(parsed.orders)) parsed.orders = [];
+      if (!parsed.productionPlan || typeof parsed.productionPlan !== 'object' || Array.isArray(parsed.productionPlan)) parsed.productionPlan = {};
       return parsed;
     }
   } catch (_) {}
@@ -820,7 +874,110 @@ function render(){
   fillUnitSelect($('#ingredientUnit'), $('#ingredientUnit').value || 'lb');
   fillRecipeSelect();
   fillPackagingSelect($('#menuPackagingItem')?.value||'');
-  renderIngredients(); renderRecipes(); renderPackaging(); renderMenu(); renderOrders(); renderCustomers(); renderDashboard();
+  renderIngredients(); renderRecipes(); renderPackaging(); renderMenu(); renderOrders(); renderCustomers(); renderDashboard(); renderBatchCalculator();
+}
+
+
+/* Batch calculator: a production plan based on the live recipes already saved in state.
+   Plan amounts are kept in the existing exportable state object; no new storage key. */
+function safeBatchNumber(v){
+  const n=Number(v);
+  return Number.isFinite(n) && n>0 ? Math.min(n,100000) : 0;
+}
+function batchQtyNumber(v){
+  return new Intl.NumberFormat('en-US',{maximumFractionDigits:3}).format(Number(v)||0);
+}
+function batchDisplayQty(qty,unit){
+  const n=Number(qty)||0;
+  const formatted=`${batchQtyNumber(n)} ${unit}`;
+  if(unit==='g' && n>=1000) return `${formatted} (${batchQtyNumber(n/1000)} kg)`;
+  if(unit==='ml' && n>=1000) return `${formatted} (${batchQtyNumber(n/1000)} L)`;
+  return formatted;
+}
+function buildBatchPlan(){
+  const chosen=[];
+  const combined=new Map();
+  let batches=0, yieldTotal=0, costTotal=0;
+  const warnings=[];
+  for(const recipe of state.recipes){
+    const count=safeBatchNumber(state.productionPlan?.[recipe.id]);
+    if(!count) continue;
+    batches+=count;
+    const yieldNum=Number(recipe.yield)||0;
+    const cost=recipeCost(recipe)*count;
+    yieldTotal+=yieldNum*count;
+    costTotal+=cost;
+    const lines=[];
+    for(const line of recipe.lines||[]){
+      const ing=byId(state.ingredients,line.ingredientId);
+      const unit=UNITS[line.unit];
+      const rawQty=Number(line.qty)*count;
+      if(!ing||!unit||!Number.isFinite(rawQty)){
+        warnings.push(`An ingredient in ${recipe.name} needs attention in the Recipes tab.`);
+        continue;
+      }
+      const key=`${ing.id}:${unit.type}`;
+      const existing=combined.get(key);
+      if(!existing) combined.set(key, {name:ing.name,ingredientId:ing.id,baseAmount:0,preferredUnit:line.unit,type:unit.type});
+      combined.get(key).baseAmount+=rawQty*unit.factor;
+      lines.push({name:ing.name,qty:rawQty,unit:line.unit});
+    }
+    chosen.push({recipe, count, yieldTotal:yieldNum*count, cost,lines});
+  }
+  const totals=[...combined.values()].map(row=>{
+    const factor=UNITS[row.preferredUnit]?.factor||1;
+    return {...row, qty:row.baseAmount/factor, unit:row.preferredUnit};
+  }).sort((a,b)=>a.name.localeCompare(b.name));
+  return {chosen,totals,batches,yieldTotal,costTotal,warnings};
+}
+function renderBatchCalculator(){
+  const inputs=$('#batchRecipeInputs');
+  if(!inputs) return;
+  if(!state.productionPlan) state.productionPlan={};
+  if(!state.recipes.length){ inputs.innerHTML='<div class="empty">Add a recipe first in the Recipes tab.</div>'; }
+  else inputs.innerHTML=state.recipes.map(r=>{
+    const amount=safeBatchNumber(state.productionPlan[r.id]);
+    return `<div class="batch-recipe-row">
+      <label for="batch-${escapeHtml(r.id)}">${escapeHtml(r.name)}<span class="batch-yield">1 batch = ${batchQtyNumber(r.yield)} ${escapeHtml(r.yieldLabel||'bagels')}</span></label>
+      <input id="batch-${escapeHtml(r.id)}" class="batch-count" type="number" min="0" max="100000" step="0.25" inputmode="decimal" value="${amount}" data-batch-recipe="${escapeHtml(r.id)}" aria-label="Batches of ${escapeHtml(r.name)}" />
+    </div>`;
+  }).join('');
+  renderBatchResults();
+}
+function renderBatchResults(){
+  const p=buildBatchPlan();
+  $('#batchSummaryCards').innerHTML=`
+    <div class="metric"><div class="value">${batchQtyNumber(p.batches)}</div><div class="label">Total batches</div></div>
+    <div class="metric"><div class="value">${batchQtyNumber(p.yieldTotal)}</div><div class="label">Bagels produced</div></div>
+    <div class="metric"><div class="value">${p.chosen.length}</div><div class="label">Flavors selected</div></div>
+    <div class="metric"><div class="value">${money(p.costTotal)}</div><div class="label">Estimated ingredient cost</div></div>`;
+  $('#batchIngredientTotals').innerHTML=!p.totals.length
+    ? '<div class="empty">Enter a batch quantity for any flavor to see your ingredient totals.</div>'
+    : p.totals.map(ing=>`<div class="batch-ingredient-row"><span>${escapeHtml(ing.name)}</span><strong>${escapeHtml(batchDisplayQty(ing.qty,ing.unit))}</strong></div>`).join('') + (p.warnings.length?`<p class="batch-footnote">${escapeHtml([...new Set(p.warnings)].join(' '))}</p>`:'');
+  $('#batchRecipeBreakdown').innerHTML=!p.chosen.length
+    ? '<div class="empty">Select one or more flavors to see the scaled recipe for each.</div>'
+    : p.chosen.map(info=>`<div class="batch-recipe-detail">
+      <h3>${escapeHtml(info.recipe.name)}</h3>
+      <p>${batchQtyNumber(info.count)} ${info.count===1?'batch':'batches'} · ${batchQtyNumber(info.yieldTotal)} ${escapeHtml(info.recipe.yieldLabel||'bagels')} · ${money(info.cost)} ingredient cost</p>
+      <ul>${info.lines.map(line=>`<li>${escapeHtml(line.name)} — <strong>${escapeHtml(batchDisplayQty(line.qty,line.unit))}</strong></li>`).join('')}</ul>
+    </div>`).join('');
+}
+function batchListText(){
+  const p=buildBatchPlan();
+  if(!p.chosen.length) return '';
+  return [
+    'BAGEL PRODUCTION PREP LIST',
+    `${batchQtyNumber(p.batches)} batches · ${batchQtyNumber(p.yieldTotal)} bagels · estimated ingredient cost ${money(p.costTotal)}`,
+    '', 'COMBINED INGREDIENTS',
+    ...p.totals.map(i=>`${i.name}: ${batchDisplayQty(i.qty,i.unit)}`),
+    '', 'BY FLAVOR',
+    ...p.chosen.flatMap(x=>[
+      `${x.recipe.name} — ${batchQtyNumber(x.count)} batches (${batchQtyNumber(x.yieldTotal)} ${x.recipe.yieldLabel||'bagels'})`,
+      ...x.lines.map(l=>`  ${l.name}: ${batchDisplayQty(l.qty,l.unit)}`),
+      ''
+    ]),
+    'Ingredient quantities only; packaging not included.'
+  ].join('\n');
 }
 
 function renderIngredients(){
@@ -1093,6 +1250,35 @@ $('#exportCustomersCsv').addEventListener('click',()=>{
   const blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a'); a.href=url; a.download='bagel-customers.csv'; a.click(); URL.revokeObjectURL(url);
 });
 
+$('#batchRecipeInputs').addEventListener('input',e=>{
+  const input=e.target.closest('[data-batch-recipe]');
+  if(!input) return;
+  if(!state.productionPlan) state.productionPlan={};
+  state.productionPlan[input.dataset.batchRecipe]=safeBatchNumber(input.value);
+  saveState();
+  renderBatchResults();
+});
+$('#clearBatchPlan').addEventListener('click',()=>{
+  state.productionPlan={};
+  saveState();
+  renderBatchCalculator();
+  toast('Batch plan cleared');
+});
+$('#copyBatchList').addEventListener('click',async()=>{
+  const text=batchListText();
+  if(!text){toast('Enter batches to create a list');return;}
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Ingredient list copied');
+  } catch (_) {
+    const textarea=document.createElement('textarea');
+    textarea.value=text; textarea.style.position='fixed'; textarea.style.opacity='0';
+    document.body.appendChild(textarea); textarea.select();
+    const ok=document.execCommand('copy'); textarea.remove();
+    toast(ok?'Ingredient list copied':'Copy unavailable on this device');
+  }
+});
+
 $('#ingredientForm').addEventListener('submit',e=>{
   e.preventDefault();
   const id=$('#ingredientId').value||uid();
@@ -1155,10 +1341,10 @@ $$('.tab').forEach(tab=>tab.addEventListener('click',()=>{
 }));
 
 $('#exportBtn').addEventListener('click',()=>{
-  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='bagel-cost-data-v4.json'; a.click(); URL.revokeObjectURL(url);
+  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='bagel-cost-data-v7.json'; a.click(); URL.revokeObjectURL(url);
 });
 $('#importFile').addEventListener('change',async e=>{
-  const file=e.target.files[0]; if(!file)return; try{ const parsed=JSON.parse(await file.text()); if(!parsed.ingredients||!parsed.recipes||!parsed.menuItems) throw new Error(); state=parsed; if(!Array.isArray(state.orders)) state.orders=[]; if(!state.packagingItems?.length) state.packagingItems=[{id:uid(),name:'Plastic Bag',price:4.28,packageQty:100}]; const plastic=state.packagingItems.find(p=>p.name==='Plastic Bag')||state.packagingItems[0]; const bc=packagingUnitCost(plastic); state.menuItems=state.menuItems.map(i=>({...i,packagingItemId:i.packagingItemId||plastic.id,packagingQty:Number.isFinite(Number(i.packagingQty))?Number(i.packagingQty):(bc?Math.round(Number(i.packaging||0)/bc):0),extras:Number(i.extras||0)})); saveState(); clearRecipeForm(); clearPackagingForm(); clearOrderForm(); render(); toast('Data imported'); }catch(_){toast('That file could not be imported');} e.target.value='';
+  const file=e.target.files[0]; if(!file)return; try{ const parsed=JSON.parse(await file.text()); if(!parsed.ingredients||!parsed.recipes||!parsed.menuItems) throw new Error(); state=parsed; if(!Array.isArray(state.orders)) state.orders=[]; if(!state.productionPlan || typeof state.productionPlan!=='object' || Array.isArray(state.productionPlan)) state.productionPlan={}; if(!state.packagingItems?.length) state.packagingItems=[{id:uid(),name:'Plastic Bag',price:4.28,packageQty:100}]; const plastic=state.packagingItems.find(p=>p.name==='Plastic Bag')||state.packagingItems[0]; const bc=packagingUnitCost(plastic); state.menuItems=state.menuItems.map(i=>({...i,packagingItemId:i.packagingItemId||plastic.id,packagingQty:Number.isFinite(Number(i.packagingQty))?Number(i.packagingQty):(bc?Math.round(Number(i.packaging||0)/bc):0),extras:Number(i.extras||0)})); saveState(); clearRecipeForm(); clearPackagingForm(); clearOrderForm(); render(); toast('Data imported'); }catch(_){toast('That file could not be imported');} e.target.value='';
 });
 $('#resetBtn').addEventListener('click',()=>{ if(!confirm('Reset to the starter data? This replaces your current saved data.')) return; state=demoState(); seedDemoRecipe(); ensurePlainBagelChannels(); ensureJalapenoCheddarData(); ensureGarlicData(); ensureEverythingData(); ensureMontrealSteakData(); clearIngredientForm(); clearRecipeForm(); clearPackagingForm(); clearMenuForm(); clearOrderForm(); render(); toast('Starter data restored'); });
 

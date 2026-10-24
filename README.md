@@ -1,35 +1,21 @@
-# Bagel Cost Tracker v6
+# Bagel Cost Tracker — v7
 
-Version 6 reorganizes Order History into three automatic workflow tabs while preserving all existing food-cost, sales, customer, mixed-dozen, and dashboard features.
+This GitHub Pages update adds a **Batch Calculator** while retaining all prior features in v6.
 
-## New in Version 6
-- **Active Orders** tab: Pending and Ready orders.
-- **Completed Orders** tab: Completed but Unpaid orders, plus Cancelled orders kept for recordkeeping.
-- **Archive** tab: orders automatically move here once they are both **Completed** and **Paid**.
-- Tab counts update automatically and respect the selected sales-history date period.
-- Editing an order's status or payment state immediately moves it to the correct tab.
-- No manual archive action is required.
+## Batch Calculator
 
-## Existing features
-- Ingredient price + package-size tracking with automatic unit conversion
-- Editable packaging costs
-- Recipe/batch costing and cost per bagel
-- Wholesale and Direct-to-Consumer sales channels
-- Dozen and half-dozen DTC options
-- Mixed DTC dozens with two flavors
-- Food-cost %, gross profit, and gross margin
-- Multi-item order entry
-- Customer profiles and order history
-- Paid / Unpaid tracking
-- Sales summaries and CSV exports
-- All-time bagels sold dashboard tracker
-- Full JSON export/import backup
-- Offline-capable PWA files when hosted over HTTPS
+1. Open **Batch Calculator** from the app navigation.
+2. Enter the number of batches you want for each bagel flavor (e.g., Plain 3, Everything 2; leave others at zero).
+3. The app automatically displays the total bagels produced, ingredient cost, a combined ingredient shopping/prep list, and each flavor’s scaled recipe.
+4. You can enter fractional batches such as `0.5`, and you can copy the ingredient prep list with **Copy ingredient list**.
+5. Recipe quantities and ingredient prices reflect the latest values in the Recipes and Ingredients tabs.
 
-## Updating GitHub Pages
-Replace the files in your existing GitHub repository with the files from this folder. Keep `index.html`, `manifest.webmanifest`, and `service-worker.js` at the repository root and keep the `icons` folder beside them. Commit the changes to the same branch.
+Packaging, labor, and utilities are **not** included in the production ingredient cost.
 
-Version 6 keeps the same browser storage key (`bagel-cost-tracker-v1`), so your existing ingredients, recipes, customers, and saved orders remain on the device after the update.
+## Safe GitHub Pages update
 
-## Data note
-Data is stored locally in each browser/device. Export a JSON backup regularly. Cloud sync is not included yet.
+Upload the **contents of this folder** to your existing GitHub repository root. Replace `index.html`, `service-worker.js`, `manifest.webmanifest`, `README.md`, and `icons/` as applicable, and commit the changes to the existing branch. The app URL and installed home-screen icon remain the same.
+
+**Before updating**, open the existing installed app and export a JSON backup. The existing browser storage key remains `bagel-cost-tracker-v1`, so your recipes, ingredient costs, past orders, customer profiles, and sales should continue to appear after the update. The batch plan is also included in future JSON exports.
+
+**Note:** App data is saved locally in each browser/device; GitHub hosts the code but does not sync sales data between devices.
