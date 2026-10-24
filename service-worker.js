@@ -1,5 +1,5 @@
-const CACHE='bagel-cost-tracker-v7';
-const ASSETS=['./','./index.html','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'];
+const CACHE='bagel-cost-tracker-v8';
+const ASSETS=['./','./index.html','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-maskable-512.png','./icons/apple-touch-icon.png','./icons/favicon-64.png','./icons/brand-mark.png'];
 
 self.addEventListener('install', event => {
   self.skipWaiting();
